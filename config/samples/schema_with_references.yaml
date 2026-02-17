@@ -1,0 +1,51 @@
+apiVersion: registry.strimzi.io/v1alpha1
+kind: Schema
+metadata:
+  name: address-schema
+  namespace: kafka
+spec:
+  subject: "addresses-value"
+  schemaType: AVRO
+  schema: |
+    {
+      "type": "record",
+      "name": "Address",
+      "namespace": "com.example",
+      "fields": [
+        {"name": "street", "type": "string"},
+        {"name": "city", "type": "string"},
+        {"name": "zipCode", "type": "string"},
+        {"name": "country", "type": "string"}
+      ]
+    }
+  registryRef:
+    name: schemaregistry-sample
+  compatibilityLevel: BACKWARD
+---
+apiVersion: registry.strimzi.io/v1alpha1
+kind: Schema
+metadata:
+  name: user-with-address-schema
+  namespace: kafka
+spec:
+  subject: "users-with-address-value"
+  schemaType: AVRO
+  schema: |
+    {
+      "type": "record",
+      "name": "UserWithAddress",
+      "namespace": "com.example",
+      "fields": [
+        {"name": "id", "type": "string"},
+        {"name": "name", "type": "string"},
+        {"name": "email", "type": "string"},
+        {"name": "address", "type": "com.example.Address"}
+      ]
+    }
+  references:
+    - name: Address
+      subject: addresses-value
+      version: 1
+  registryRef:
+    name: schemaregistry-sample
+  compatibilityLevel: BACKWARD

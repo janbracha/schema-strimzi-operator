@@ -1,0 +1,34 @@
+apiVersion: registry.strimzi.io/v1alpha1
+kind: Schema
+metadata:
+  labels:
+    app.kubernetes.io/name: schema-strimzi-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: schema-sample
+spec:
+  # Subject name in the Schema Registry
+  subject: "users-value"
+  
+  # Schema type: AVRO, JSON, or PROTOBUF
+  schemaType: AVRO
+  
+  # The actual schema definition
+  schema: |
+    {
+      "type": "record",
+      "name": "User",
+      "namespace": "com.example",
+      "fields": [
+        {"name": "id", "type": "string"},
+        {"name": "name", "type": "string"},
+        {"name": "email", "type": "string"},
+        {"name": "created_at", "type": "long"}
+      ]
+    }
+  
+  # Reference to the SchemaRegistry resource
+  registryRef:
+    name: schemaregistry-sample
+  
+  # Compatibility level (optional)
+  compatibilityLevel: BACKWARD

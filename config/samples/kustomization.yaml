@@ -1,0 +1,5 @@
+## Append samples of your project ##
+resources:
+- registry_v1alpha1_schema.yaml
+- registry_v1alpha1_schemaregistry.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

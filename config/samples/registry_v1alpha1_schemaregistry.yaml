@@ -1,0 +1,23 @@
+apiVersion: registry.strimzi.io/v1alpha1
+kind: SchemaRegistry
+metadata:
+  labels:
+    app.kubernetes.io/name: schema-strimzi-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: schemaregistry-sample
+spec:
+  # URL of the Schema Registry service
+  url: "http://schema-registry.kafka.svc.cluster.local:8081"
+  
+  # Authentication configuration (optional)
+  # Uncomment and configure based on your setup
+  # auth:
+  #   type: BASIC
+  #   basicAuth:
+  #     secretRef: schema-registry-credentials
+  
+  # Timeout for Schema Registry requests in seconds
+  timeout: 30
+  
+  # Skip TLS certificate verification (not recommended for production)
+  insecureSkipVerify: false

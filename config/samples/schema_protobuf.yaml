@@ -1,0 +1,23 @@
+apiVersion: registry.strimzi.io/v1alpha1
+kind: Schema
+metadata:
+  name: user-schema-protobuf
+  namespace: kafka
+spec:
+  subject: "users-proto-value"
+  schemaType: PROTOBUF
+  schema: |
+    syntax = "proto3";
+    
+    package com.example;
+    
+    message User {
+      string id = 1;
+      string name = 2;
+      string email = 3;
+      int32 age = 4;
+      int64 created_at = 5;
+    }
+  registryRef:
+    name: schemaregistry-sample
+  compatibilityLevel: FULL

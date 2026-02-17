@@ -1,0 +1,43 @@
+apiVersion: registry.strimzi.io/v1alpha1
+kind: Schema
+metadata:
+  name: user-schema-json
+  namespace: kafka
+spec:
+  subject: "users-json-value"
+  schemaType: JSON
+  schema: |
+    {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "User unique identifier"
+        },
+        "name": {
+          "type": "string",
+          "description": "User full name"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "User email address"
+        },
+        "age": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "User age"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Account creation timestamp"
+        }
+      },
+      "required": ["id", "name", "email"]
+    }
+  registryRef:
+    name: schemaregistry-sample
+  compatibilityLevel: FORWARD

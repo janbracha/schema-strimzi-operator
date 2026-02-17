@@ -1,0 +1,78 @@
+apiVersion: registry.strimzi.io/v1alpha1
+kind: SchemaRegistry
+metadata:
+  name: schemaregistry-with-basic-auth
+  namespace: kafka
+spec:
+  url: "https://schema-registry.example.com"
+  auth:
+    type: BASIC
+    basicAuth:
+      secretRef: schema-registry-credentials
+  timeout: 30
+  insecureSkipVerify: false
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: schema-registry-credentials
+  namespace: kafka
+type: Opaque
+stringData:
+  username: "admin"
+  password: "secret-password"
+---
+apiVersion: registry.strimzi.io/v1alpha1
+kind: SchemaRegistry
+metadata:
+  name: schemaregistry-with-bearer
+  namespace: kafka
+spec:
+  url: "https://schema-registry.example.com"
+  auth:
+    type: BEARER
+    bearerAuth:
+      secretRef: schema-registry-token
+  timeout: 30
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: schema-registry-token
+  namespace: kafka
+type: Opaque
+stringData:
+  token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+---
+apiVersion: registry.strimzi.io/v1alpha1
+kind: SchemaRegistry
+metadata:
+  name: schemaregistry-with-mtls
+  namespace: kafka
+spec:
+  url: "https://schema-registry.example.com"
+  auth:
+    type: MTLS
+    mtls:
+      certSecretRef: schema-registry-client-cert
+      caSecretRef: schema-registry-ca-cert
+  timeout: 30
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: schema-registry-client-cert
+  namespace: kafka
+type: kubernetes.io/tls
+data:
+  tls.crt: LS0tLS1CRUdJTi... # Base64 encoded client certificate
+  tls.key: LS0tLS1CRUdJTi... # Base64 encoded client key
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: schema-registry-ca-cert
+  namespace: kafka
+type: Opaque
+data:
+  ca.crt: LS0tLS1CRUdJTi... # Base64 encoded CA certificate
