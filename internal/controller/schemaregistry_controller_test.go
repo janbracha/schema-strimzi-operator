@@ -51,7 +51,10 @@ var _ = Describe("SchemaRegistry Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: registryv1alpha1.SchemaRegistrySpec{
+						URL:     "http://schema-registry.test.svc.cluster.local:8081",
+						Timeout: 5,
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
@@ -73,12 +76,18 @@ var _ = Describe("SchemaRegistry Controller", func() {
 				Scheme: k8sClient.Scheme(),
 			}
 
+			// The reconciler performs a health check against a non-existent endpoint.
+			// It should NOT return an error - instead it sets the status condition to
+			// ConnectionFailed and requeues after 5 minutes.
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			By("Verifying the status condition is set")
+			updated := &registryv1alpha1.SchemaRegistry{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
+			Expect(updated.Status.ConnectionStatus).NotTo(BeEmpty())
 		})
 	})
 })

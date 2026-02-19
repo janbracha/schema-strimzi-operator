@@ -51,34 +51,60 @@ var _ = Describe("Schema Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: registryv1alpha1.SchemaSpec{
+						Subject:    "test-subject-value",
+						SchemaType: registryv1alpha1.SchemaTypeAvro,
+						Schema:     `{"type":"record","name":"Test","fields":[{"name":"id","type":"string"}]}`,
+						RegistryRef: registryv1alpha1.SchemaRegistryRef{
+							Name: "test-registry",
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
 			resource := &registryv1alpha1.Schema{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
 
+			By("Removing finalizer so the resource can be deleted")
+			// The reconciler adds a finalizer; we must remove it manually in tests
+			// since there is no running controller to handle the deletion lifecycle.
+			resource.Finalizers = nil
+			Expect(k8sClient.Update(ctx, resource)).To(Succeed())
+
 			By("Cleanup the specific resource instance Schema")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
-		It("should successfully reconcile the resource", func() {
+		It("should add a finalizer and set a failed status condition when registry is not found", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &SchemaReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
 			}
 
+			// First reconcile: adds finalizer only
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			By("Verifying the finalizer was added")
+			updated := &registryv1alpha1.Schema{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
+			Expect(updated.Finalizers).To(ContainElement(schemaFinalizer))
+
+			By("Second reconcile: registry not found -> sets failed condition")
+			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying a failed condition is set")
+			Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
+			Expect(updated.Status.Conditions).NotTo(BeEmpty())
 		})
 	})
 })
