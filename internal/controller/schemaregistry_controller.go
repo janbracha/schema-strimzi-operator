@@ -20,19 +20,19 @@ import (
 	"context"
 	"time"
 
-        corev1 "k8s.io/api/core/v1"
-        "k8s.io/apimachinery/pkg/api/meta"
-        metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-        "k8s.io/apimachinery/pkg/runtime"
-        "k8s.io/apimachinery/pkg/types"
-        ctrl "sigs.k8s.io/controller-runtime"
-        "sigs.k8s.io/controller-runtime/pkg/client"
-        "sigs.k8s.io/controller-runtime/pkg/handler"
-        logf "sigs.k8s.io/controller-runtime/pkg/log"
-        "sigs.k8s.io/controller-runtime/pkg/reconcile"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-        registryv1alpha1 "github.com/honza/schema-strimzi-operator/api/v1alpha1"
-        schemaclient "github.com/honza/schema-strimzi-operator/internal/client"
+	registryv1alpha1 "github.com/honza/schema-strimzi-operator/api/v1alpha1"
+	schemaclient "github.com/honza/schema-strimzi-operator/internal/client"
 )
 
 // SchemaRegistryReconciler reconciles a SchemaRegistry object
@@ -144,51 +144,51 @@ func (r *SchemaRegistryReconciler) setConditionFailed(ctx context.Context, sr *r
 
 // findSchemaRegistriesForSecret maps a Secret change to SchemaRegistry reconcile requests.
 func (r *SchemaRegistryReconciler) findSchemaRegistriesForSecret(ctx context.Context, secret client.Object) []reconcile.Request {
-        srList := &registryv1alpha1.SchemaRegistryList{}
-        if err := r.List(ctx, srList, client.InNamespace(secret.GetNamespace())); err != nil {
-                return nil
-        }
-        var requests []reconcile.Request
-        for _, sr := range srList.Items {
-                if schemaRegistryReferencesSecret(&sr, secret.GetName()) {
-                        requests = append(requests, reconcile.Request{
-                                NamespacedName: types.NamespacedName{
-                                        Namespace: sr.Namespace,
-                                        Name:      sr.Name,
-                                },
-                        })
-                }
-        }
-        return requests
+	srList := &registryv1alpha1.SchemaRegistryList{}
+	if err := r.List(ctx, srList, client.InNamespace(secret.GetNamespace())); err != nil {
+		return nil
+	}
+	var requests []reconcile.Request
+	for _, sr := range srList.Items {
+		if schemaRegistryReferencesSecret(&sr, secret.GetName()) {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Namespace: sr.Namespace,
+					Name:      sr.Name,
+				},
+			})
+		}
+	}
+	return requests
 }
 
 // schemaRegistryReferencesSecret returns true if the SchemaRegistry references the given secret.
 func schemaRegistryReferencesSecret(sr *registryv1alpha1.SchemaRegistry, secretName string) bool {
-        if sr.Spec.Auth == nil {
-                return false
-        }
-        switch sr.Spec.Auth.Type {
-        case registryv1alpha1.AuthTypeBasic:
-                return sr.Spec.Auth.BasicAuth != nil && sr.Spec.Auth.BasicAuth.SecretRef == secretName
-        case registryv1alpha1.AuthTypeBearer:
-                return sr.Spec.Auth.BearerAuth != nil && sr.Spec.Auth.BearerAuth.SecretRef == secretName
-        case registryv1alpha1.AuthTypeMTLS:
-                if sr.Spec.Auth.MTLS == nil {
-                        return false
-                }
-                return sr.Spec.Auth.MTLS.CertSecretRef == secretName || sr.Spec.Auth.MTLS.CASecretRef == secretName
-        }
-        return false
+	if sr.Spec.Auth == nil {
+		return false
+	}
+	switch sr.Spec.Auth.Type {
+	case registryv1alpha1.AuthTypeBasic:
+		return sr.Spec.Auth.BasicAuth != nil && sr.Spec.Auth.BasicAuth.SecretRef == secretName
+	case registryv1alpha1.AuthTypeBearer:
+		return sr.Spec.Auth.BearerAuth != nil && sr.Spec.Auth.BearerAuth.SecretRef == secretName
+	case registryv1alpha1.AuthTypeMTLS:
+		if sr.Spec.Auth.MTLS == nil {
+			return false
+		}
+		return sr.Spec.Auth.MTLS.CertSecretRef == secretName || sr.Spec.Auth.MTLS.CASecretRef == secretName
+	}
+	return false
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *SchemaRegistryReconciler) SetupWithManager(mgr ctrl.Manager) error {
-        return ctrl.NewControllerManagedBy(mgr).
-                For(&registryv1alpha1.SchemaRegistry{}).
-                Watches(
-                        &corev1.Secret{},
-                        handler.EnqueueRequestsFromMapFunc(r.findSchemaRegistriesForSecret),
-                ).
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&registryv1alpha1.SchemaRegistry{}).
+		Watches(
+			&corev1.Secret{},
+			handler.EnqueueRequestsFromMapFunc(r.findSchemaRegistriesForSecret),
+		).
 		Named("schemaregistry").
 		Complete(r)
 }
