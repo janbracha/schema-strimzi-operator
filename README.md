@@ -83,8 +83,10 @@ spec:
 
 Operátor je postaven na Kubebuilder frameworku a obsahuje:
 
-- **API definice** (`api/v1alpha1/`): Go struktury definující CRDs
-- **Controllers** (`internal/controller/`): Reconciliation logika pro synchronizaci s Schema Registry
+- **API definice** (`api/v1alpha1/`): Go struktury definující CRDs pro `SchemaRegistry` a `Schema`
+- **HTTP Client** (`internal/client/`): Implementace Confluent Schema Registry API (health check, registrace schémat, kompatibilita, mazání)
+- **Controllers** (`internal/controller/`): Reconciliation logika pro synchronizaci s Schema Registry, watches na Secrets a SchemaRegistry změny
+- **Webhooks** (`internal/webhook/v1alpha1/`): Validační admission webhooks pro obě CRD
 - **Config** (`config/`): Kubernetes manifesty (CRDs, RBAC, deployment)
 
 ## Development
@@ -125,69 +127,28 @@ make run
 make uninstall
 ```
 
-### Deployment do clusteru
+## Deployment do clusteru
 
 ```bash
 # Build a push Docker image
-make docker-build docker-push IMG=<your-registry>/schema-strimzi-operator:tag
+make docker-build docker-push IMG=<your-registry>/schema-strimzi-operator:v0.1.0
 
 # Deploy do clusteru
-make deploy IMG=<your-registry>/schema-strimzi-operator:tag
+make deploy IMG=<your-registry>/schema-strimzi-operator:v0.1.0
 
 # Undeploy
 make undeploy
 ```
 
-## Implementace - Další kroky
+### Distribuce přes YAML bundle
 
-Aktuální stav je *scaffold* - základní struktura projektu. Pro plnou funkčnost je potřeba implementovat:
+```bash
+# Vygenerovat dist/install.yaml (obsahuje CRDs, RBAC a Deployment)
+make build-installer IMG=<your-registry>/schema-strimzi-operator:v0.1.0
 
-### 1. Schema Registry Client
-
-V `internal/client/` vytvořit HTTP client pro komunikaci se Schema Registry:
-- Registrace nových schémat
-- Aktualizace existujících schémat
-- Získání informací o schématu (ID, verze)
-- Nastavení compatibility levelu
-- Podpora autentizace (Basic, Bearer, mTLS)
-
-**Doporučené knihovny:**
-- `github.com/riferrei/srclient` - Go client pro Confluent Schema Registry
-- Nebo vlastní implementace nad `net/http`
-
-### 2. Controller logika
-
-#### SchemaRegistryController (`internal/controller/schemaregistry_controller.go`)
-- Validace připojení k Schema Registry
-- Načtení credentials ze Secrets
-- Pravidelné health checks
-- Update status (connectionStatus, conditions)
-
-#### SchemaController (`internal/controller/schema_controller.go`)
-- Reconcile loop:
-  1. Načíst Schema resource
-  2. Získat SchemaRegistry configuraci
-  3. Připojit se k Schema Registry
-  4. Registrovat/aktualizovat schéma
-  5. Aktualizovat status (schemaId, version)
-- Finalizery pro cleanup
-- Handling error stavů a retries
-- Event recording
-
-### 3. Testování
-
-- Unit testy pro client (`internal/client/`)
-- Controller testy s fake clients
-- Integration testy s testcontainers (Schema Registry in Docker)
-- E2E testy v reálném clusteru
-
-### 4. Další vylepšení
-
-- **Webhooks**: Validace schémat před uložením (admission webhook)
-- **Metrics**: Prometheus metriky (počet registrovaných schémat, chyby, latence)
-- **Subject management**: CRD pro správu subjects (delete, compatibility level)
-- **Schema evolution**: Automatická migrace schémat
-- **Integration s Strimzi**: Automatické vytváření schémat pro KafkaTopics
+# Instalace v clusteru
+kubectl apply -f dist/install.yaml
+```
 
 ## Struktura projektu
 
@@ -202,11 +163,11 @@ V `internal/client/` vytvořit HTTP client pro komunikaci se Schema Registry:
 │   ├── rbac/                  # Role-based access control
 │   ├── manager/               # Deployment konfigurace
 │   └── samples/               # Ukázkové CR manifesty
-├── internal/controller/        # Controller implementace
-│   ├── schema_controller.go
-│   └── schemaregistry_controller.go
+├── internal/
+│   ├── client/                # HTTP client pro Schema Registry API
+│   ├── controller/            # Controller reconciliation logika
+│   └── webhook/v1alpha1/      # Validační admission webhooks
 └── test/                       # E2E testy
-
 ```
 
 ## Příklady použití

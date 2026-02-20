@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -212,6 +213,31 @@ var _ = Describe("Manager", Ordered, func() {
 			}
 			Eventually(verifyMetricsServerStarted, 3*time.Minute, time.Second).Should(Succeed())
 
+			By("waiting for the webhook service endpoints to be ready")
+			verifyWebhookEndpointsReady := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "endpointslices.discovery.k8s.io", "-n", namespace,
+					"-l", "kubernetes.io/service-name=schema-strimzi-operator-webhook-service",
+					"-o", "jsonpath={range .items[*]}{range .endpoints[*]}{.addresses[*]}{end}{end}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred(), "Webhook endpoints should exist")
+				g.Expect(output).ShouldNot(BeEmpty(), "Webhook endpoints not yet ready")
+			}
+			Eventually(verifyWebhookEndpointsReady, 3*time.Minute, time.Second).Should(Succeed())
+
+			By("verifying the validating webhook server is ready")
+			verifyValidatingWebhookReady := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "validatingwebhookconfigurations.admissionregistration.k8s.io",
+					"schema-strimzi-operator-validating-webhook-configuration",
+					"-o", "jsonpath={.webhooks[0].clientConfig.caBundle}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred(), "ValidatingWebhookConfiguration should exist")
+				g.Expect(output).ShouldNot(BeEmpty(), "Validating webhook CA bundle not yet injected")
+			}
+			Eventually(verifyValidatingWebhookReady, 3*time.Minute, time.Second).Should(Succeed())
+
+			By("waiting additional time for webhook server to stabilize")
+			time.Sleep(5 * time.Second)
+
 			// +kubebuilder:scaffold:e2e-metrics-webhooks-readiness
 
 			By("creating the curl-metrics pod to access the metrics endpoint")
@@ -268,7 +294,139 @@ var _ = Describe("Manager", Ordered, func() {
 			Eventually(verifyMetricsAvailable, 2*time.Minute).Should(Succeed())
 		})
 
+		It("should provisioned cert-manager", func() {
+			By("validating that cert-manager has the certificate Secret")
+			verifyCertManager := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "secrets", "webhook-server-cert", "-n", namespace)
+				_, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+			Eventually(verifyCertManager).Should(Succeed())
+		})
+
+		It("should have CA injection for validating webhooks", func() {
+			By("checking CA injection for validating webhooks")
+			verifyCAInjection := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get",
+					"validatingwebhookconfigurations.admissionregistration.k8s.io",
+					"schema-strimzi-operator-validating-webhook-configuration",
+					"-o", "go-template={{ range .webhooks }}{{ .clientConfig.caBundle }}{{ end }}")
+				vwhOutput, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(len(vwhOutput)).To(BeNumerically(">", 10))
+			}
+			Eventually(verifyCAInjection).Should(Succeed())
+		})
+
 		// +kubebuilder:scaffold:e2e-webhooks-checks
+
+		It("should reconcile a SchemaRegistry and mark it as Unreachable", func() {
+			By("creating a SchemaRegistry pointing to a nonexistent server")
+			cmd := exec.Command("kubectl", "apply", "-f", "-", "-n", namespace)
+			cmd.Stdin = strings.NewReader(`
+apiVersion: registry.strimzi.io/v1alpha1
+kind: SchemaRegistry
+metadata:
+  name: e2e-registry
+spec:
+  url: http://nonexistent-schema-registry.invalid:8081
+  timeout: 5
+`)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create SchemaRegistry")
+
+			By("waiting for SchemaRegistry to have ConnectionStatus set")
+			verifyRegistryStatus := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get",
+					"schemaregistry", "e2e-registry",
+					"-o", "jsonpath={.status.connectionStatus}",
+					"-n", namespace,
+				)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(BeElementOf("Connected", "Unreachable"))
+			}
+			Eventually(verifyRegistryStatus).Should(Succeed())
+
+			By("cleaning up the SchemaRegistry")
+			cmd = exec.Command("kubectl", "delete", "schemaregistry", "e2e-registry", "-n", namespace)
+			_, _ = utils.Run(cmd)
+		})
+
+		It("should reconcile a Schema and set condition to False when registry is missing", func() {
+			By("creating a Schema referencing a nonexistent SchemaRegistry")
+			cmd := exec.Command("kubectl", "apply", "-f", "-", "-n", namespace)
+			cmd.Stdin = strings.NewReader(`
+apiVersion: registry.strimzi.io/v1alpha1
+kind: Schema
+metadata:
+  name: e2e-schema
+spec:
+  subject: e2e-test-value
+  schemaType: AVRO
+  schema: '{"type":"record","name":"E2ETest","fields":[{"name":"id","type":"string"}]}'
+  registryRef:
+    name: nonexistent-registry
+`)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create Schema")
+
+			By("waiting for Schema to have a Ready condition")
+			verifySchemaCondition := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get",
+					"schema", "e2e-schema",
+					"-o", `jsonpath={.status.conditions[?(@.type=="Ready")].status}`,
+					"-n", namespace,
+				)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).NotTo(BeEmpty())
+			}
+			Eventually(verifySchemaCondition).Should(Succeed())
+
+			By("cleaning up the Schema")
+			// Remove finalizer before delete so the envtest controller can clean up
+			cmd = exec.Command("kubectl", "patch", "schema", "e2e-schema", "-n", namespace,
+				"--type=json", `-p=[{"op":"remove","path":"/metadata/finalizers"}]`)
+			_, _ = utils.Run(cmd)
+			cmd = exec.Command("kubectl", "delete", "schema", "e2e-schema", "-n", namespace)
+			_, _ = utils.Run(cmd)
+		})
+
+		It("should reject a Schema with an empty subject via webhook", func() {
+			By("attempting to create a Schema with empty subject")
+			cmd := exec.Command("kubectl", "apply", "-f", "-", "-n", namespace)
+			cmd.Stdin = strings.NewReader(`
+apiVersion: registry.strimzi.io/v1alpha1
+kind: Schema
+metadata:
+  name: e2e-invalid-schema
+spec:
+  subject: ""
+  schemaType: AVRO
+  schema: '{"type":"record","name":"Test","fields":[]}'
+  registryRef:
+    name: some-registry
+`)
+			_, err := utils.Run(cmd)
+			Expect(err).To(HaveOccurred(), "Expected webhook to reject Schema with empty subject")
+		})
+
+		It("should reject a SchemaRegistry with an empty URL via webhook", func() {
+			By("attempting to create a SchemaRegistry without URL")
+			cmd := exec.Command("kubectl", "apply", "-f", "-", "-n", namespace)
+			cmd.Stdin = strings.NewReader(`
+apiVersion: registry.strimzi.io/v1alpha1
+kind: SchemaRegistry
+metadata:
+  name: e2e-invalid-registry
+spec:
+  url: ""
+  timeout: 5
+`)
+			_, err := utils.Run(cmd)
+			Expect(err).To(HaveOccurred(), "Expected webhook to reject SchemaRegistry with empty URL")
+		})
 
 		// TODO: Customize the e2e test suite with scenarios specific to your project.
 		// Consider applying sample/CR(s) and check their status and/or verifying

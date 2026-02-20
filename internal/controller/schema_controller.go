@@ -24,18 +24,20 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
+        "k8s.io/apimachinery/pkg/types"
+        ctrl "sigs.k8s.io/controller-runtime"
+        "sigs.k8s.io/controller-runtime/pkg/client"
+        "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+        "sigs.k8s.io/controller-runtime/pkg/handler"
+        logf "sigs.k8s.io/controller-runtime/pkg/log"
+        "sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	registryv1alpha1 "github.com/honza/schema-strimzi-operator/api/v1alpha1"
-	schemaclient "github.com/honza/schema-strimzi-operator/internal/client"
+        registryv1alpha1 "github.com/honza/schema-strimzi-operator/api/v1alpha1"
+        schemaclient "github.com/honza/schema-strimzi-operator/internal/client"
 )
 
 const schemaFinalizer = "registry.strimzi.io/schema-finalizer"
 
-// SchemaReconciler reconciles a Schema object
 type SchemaReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -222,10 +224,34 @@ func convertReferences(refs []registryv1alpha1.SchemaReference) []schemaclient.S
 	return result
 }
 
+// findSchemasForRegistry maps a SchemaRegistry change to Schema reconcile requests.
+func (r *SchemaReconciler) findSchemasForRegistry(ctx context.Context, registry client.Object) []reconcile.Request {
+        schemaList := &registryv1alpha1.SchemaList{}
+        if err := r.List(ctx, schemaList, client.InNamespace(registry.GetNamespace())); err != nil {
+                return nil
+        }
+        var requests []reconcile.Request
+        for _, schema := range schemaList.Items {
+                if schema.Spec.RegistryRef.Name == registry.GetName() {
+                        requests = append(requests, reconcile.Request{
+                                NamespacedName: types.NamespacedName{
+                                        Namespace: schema.Namespace,
+                                        Name:      schema.Name,
+                                },
+                        })
+                }
+        }
+        return requests
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *SchemaReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&registryv1alpha1.Schema{}).
+        return ctrl.NewControllerManagedBy(mgr).
+                For(&registryv1alpha1.Schema{}).
+                Watches(
+                        &registryv1alpha1.SchemaRegistry{},
+                        handler.EnqueueRequestsFromMapFunc(r.findSchemasForRegistry),
+                ).
 		Named("schema").
 		Complete(r)
 }
